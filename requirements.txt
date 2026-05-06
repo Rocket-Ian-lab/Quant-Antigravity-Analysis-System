@@ -1,0 +1,8 @@
+streamlit
+pandas
+requests
+beautifulsoup4
+pykrx
+google-generativeai
+plotly
+FinanceDataReader
