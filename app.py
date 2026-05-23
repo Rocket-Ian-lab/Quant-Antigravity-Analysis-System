@@ -168,10 +168,10 @@ if run_btn:
                                 # 결측치를 앞으로 채우기 (ffill)하여 일별 데이터처럼 사용할 수 있게 함
                                 m_df = pd.DataFrame(m2_series, columns=["DATA_VALUE"]).sort_index()
                                 m_df.rename(columns={"DATA_VALUE": "M2_KR"}, inplace=True)
+                                merged = pd.merge_asof(price_df, m_df, left_index=True, right_index=True, direction='backward')
                             else:
-                                m_df = pd.DataFrame(columns=["M2_KR"])
-                            
-                            merged = pd.merge_asof(price_df, m_df, left_index=True, right_index=True, direction='backward')
+                                merged = price_df.copy()
+                                merged["M2_KR"] = pd.NA
                             
                             if len(merged) > 0:
                                 # ---- 기술적 분석 시그널 생성 ----
