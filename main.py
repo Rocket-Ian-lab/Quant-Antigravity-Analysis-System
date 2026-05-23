@@ -5,6 +5,7 @@ from valuation import fetch_market_multiples, get_stock_market_data
 from theme_scraper import get_stock_sector
 from news_api import fetch_news
 from ai_summary import summarize_news
+from chart import plot_bollinger_bands
 
 def analyze_company(ticker: str, corp_code: str, company_name: str, target_year: int = 2023):
     print(f"\n[{company_name}] 기업 분석을 시작합니다...")
@@ -101,6 +102,10 @@ def run_pipeline():
         ai_summary_text = summarize_news(all_news, company_name)
         
         print(ai_summary_text)
+        print("="*60)
+        
+        print(f"[{company_name} 주가 차트 (볼린저 밴드) 생성 중...]")
+        plot_bollinger_bands(ticker, company_name)
         print("="*60)
 
 if __name__ == "__main__":

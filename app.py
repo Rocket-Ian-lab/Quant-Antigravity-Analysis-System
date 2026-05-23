@@ -8,6 +8,7 @@ from industry_avg import get_industry_averages
 from corp_mapper import load_corp_mapping
 import FinanceDataReader as fdr
 import datetime
+import requests
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 # 페이지 기본 설정
@@ -120,22 +121,56 @@ if run_btn:
                             volume_series = price_df.iloc[:, 4].astype(float)
                             open_series = price_df.iloc[:, 0].astype(float)
                             
-                            # 이동평균선(MA) 계산
+                            # 이동평균선(MA) 및 볼린저 밴드 계산
                             price_df['MA20'] = close_series.rolling(window=20).mean()
                             price_df['MA60'] = close_series.rolling(window=60).mean()
                             price_df['MA120'] = close_series.rolling(window=120).mean()
+                            price_df['STD20'] = close_series.rolling(window=20).std()
+                            price_df['Upper_BB'] = price_df['MA20'] + (price_df['STD20'] * 2)
+                            price_df['Lower_BB'] = price_df['MA20'] - (price_df['STD20'] * 2)
                             
                             # 차트 출력용으로는 최근 1년 데이터만 남기기
                             price_df = price_df[price_df.index >= one_year_ago].copy()
                             close_series = price_df.iloc[:, 3].astype(float)
                             volume_series = price_df.iloc[:, 4].astype(float)
                             
-                            # FRED에서 미국 M2(글로벌 유동성 지표) 데이터 로드
-                            m2_df = fdr.DataReader('FRED:M2SL', one_year_ago - datetime.timedelta(days=60), end_date)
-                            m2_series = m2_df['M2SL']
+                            # 한국은행 ECOS API에서 한국 M2 통화량(평잔, 원계열) 로드
+                            try:
+                                bok_api_key = st.secrets.get("BOK_API_KEY", "")
+                                if bok_api_key and bok_api_key != "YOUR_BOK_API_KEY_HERE":
+                                    start_m = (one_year_ago - datetime.timedelta(days=60)).strftime("%Y%m")
+                                    end_m = end_date.strftime("%Y%m")
+                                    # 101Y004 (M2 평잔) 통계코드 사용
+                                    url = f"https://ecos.bok.or.kr/api/StatisticSearch/{bok_api_key}/json/kr/1/1000/101Y004/M/{start_m}/{end_m}/"
+                                    r = requests.get(url)
+                                    res = r.json()
+                                    if 'StatisticSearch' in res:
+                                        m2_data = res['StatisticSearch']['row']
+                                        m_df = pd.DataFrame(m2_data)
+                                        # 시간 인덱스 설정
+                                        m_df['TIME'] = pd.to_datetime(m_df['TIME'], format='%Y%m')
+                                        m_df.set_index('TIME', inplace=True)
+                                        m_df['DATA_VALUE'] = pd.to_numeric(m_df['DATA_VALUE'])
+                                        m2_series = m_df['DATA_VALUE']
+                                    else:
+                                        m2_series = pd.Series(dtype=float)
+                                        st.sidebar.warning(f"한국 M2 데이터 조회 실패: {res.get('RESULT', {}).get('MESSAGE', '알 수 없는 오류')}")
+                                else:
+                                    # API 키가 없을 경우 안내를 위해 빈 시리즈 생성
+                                    m2_series = pd.Series(dtype=float)
+                                    st.sidebar.warning("한국은행 ECOS API 키가 설정되지 않아 M2 데이터를 가져올 수 없습니다. '.streamlit/secrets.toml'에 'BOK_API_KEY'를 추가하세요.")
+                            except Exception as e:
+                                m2_series = pd.Series(dtype=float)
+                                st.sidebar.error(f"한국 M2 데이터 로딩 에러: {e}")
                             
                             # 주가 날짜를 기준으로 M2 데이터를 과거 방향으로 병합 (결측치 방지)
-                            m_df = pd.DataFrame(m2_series).sort_index()
+                            if not m2_series.empty:
+                                # 결측치를 앞으로 채우기 (ffill)하여 일별 데이터처럼 사용할 수 있게 함
+                                m_df = pd.DataFrame(m2_series, columns=["DATA_VALUE"]).sort_index()
+                                m_df.rename(columns={"DATA_VALUE": "M2_KR"}, inplace=True)
+                            else:
+                                m_df = pd.DataFrame(columns=["M2_KR"])
+                            
                             merged = pd.merge_asof(price_df, m_df, left_index=True, right_index=True, direction='backward')
                             
                             if len(merged) > 0:
@@ -170,6 +205,10 @@ if run_btn:
                                     specs=[[{"secondary_y": True}], [{"secondary_y": False}]]
                                 )
                                 
+                                # 볼린저 밴드 (상단 -> 하단 순서로 추가하여 사이를 색칠함)
+                                fig.add_trace(go.Scatter(x=merged.index, y=merged['Upper_BB'], name="볼린저 상단", line=dict(color="rgba(44, 160, 44, 0.5)", width=1, dash='dot')), row=1, col=1, secondary_y=False)
+                                fig.add_trace(go.Scatter(x=merged.index, y=merged['Lower_BB'], name="볼린저 하단", line=dict(color="rgba(44, 160, 44, 0.5)", width=1, dash='dot'), fill='tonexty', fillcolor="rgba(44, 160, 44, 0.1)"), row=1, col=1, secondary_y=False)
+
                                 # 주가 및 이동평균선 (기본 Y축, 왼쪽, Row 1)
                                 fig.add_trace(go.Scatter(x=merged.index, y=merged.iloc[:, 3], name="주가 (종가)", line=dict(color="#FF4B4B", width=2)), row=1, col=1, secondary_y=False)
                                 fig.add_trace(go.Scatter(x=merged.index, y=merged['MA20'], name="20일선", line=dict(color="#FF8C00", width=1.5)), row=1, col=1, secondary_y=False)
@@ -177,8 +216,8 @@ if run_btn:
                                 fig.add_trace(go.Scatter(x=merged.index, y=merged['MA120'], name="120일선", line=dict(color="#9467BD", width=1.5)), row=1, col=1, secondary_y=False)
                                 
                                 # M2 통화량 (보조 Y축, 오른쪽, Row 1)
-                                if "M2SL" in merged.columns and merged["M2SL"].notna().any():
-                                    fig.add_trace(go.Scatter(x=merged.index, y=merged["M2SL"], name="글로벌 M2 통화량", line=dict(color="#1f77b4", width=2, dash='dot')), row=1, col=1, secondary_y=True)
+                                if "M2_KR" in merged.columns and merged["M2_KR"].notna().any():
+                                    fig.add_trace(go.Scatter(x=merged.index, y=merged["M2_KR"], name="대한민국 M2 통화량", line=dict(color="#1f77b4", width=2, dash='dot')), row=1, col=1, secondary_y=True)
                                 
                                 # 거래량 (기본 Y축, Row 2)
                                 # 종가 >= 시가 이면 빨강(상승), 아니면 파랑(하락)
