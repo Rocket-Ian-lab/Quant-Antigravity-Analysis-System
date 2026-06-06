@@ -68,6 +68,17 @@ with st.sidebar:
         corp_code = st.text_input("고유번호", "00126380")
         
     target_year = st.number_input("분석 연도", min_value=2015, max_value=2026, value=2024, step=1)
+    target_quarter = st.selectbox(
+        "분석 분기",
+        options=["사업보고서", "1분기", "반기", "3분기"],
+        format_func=lambda x: {
+            "사업보고서": "연간 (사업보고서)",
+            "1분기": "1분기 (1분기보고서)",
+            "반기": "반기 (반기보고서)",
+            "3분기": "3분기 (3분기보고서)"
+        }.get(x, x),
+        index=0
+    )
     
     run_btn = st.button("🚀 분석 실행", type="primary", use_container_width=True)
     
@@ -88,7 +99,7 @@ if run_btn:
     with st.spinner(f"'{company_name}' 데이터를 수집하고 분석 중입니다..."):
         try:
             # 1. 재무 및 시장 데이터 분석
-            profile = analyze_company(ticker, corp_code, company_name, target_year)
+            profile = analyze_company(ticker, corp_code, company_name, target_year, quarter=target_quarter)
             
             if profile:
                 fin = profile.financials[-1]
@@ -96,7 +107,7 @@ if run_btn:
                 
                 # --- 상단 헤더 영역 ---
                 st.subheader(f"📊 {profile.company_name} ({profile.ticker}) 종합 분석")
-                st.caption(f"분류 섹터: **{profile.sector}** | 기준 연도: {fin.year}년")
+                st.caption(f"분류 섹터: **{profile.sector}** | 기준 기간: {fin.year}년 {fin.quarter}")
                 st.divider()
                 
                 # --- 주가 차트 영역 (최근 1년) ---
@@ -180,7 +191,8 @@ if run_btn:
                                 
                                 # 거래량 급증 확인 (최근 20일 평균 거래량 대비 2배 이상 돌파 여부)
                                 avg_vol_20 = volume_series.rolling(window=20).mean().iloc[-1]
-                                is_vol_spike = latest.iloc[4] > (avg_vol_20 * 2) if avg_vol_20 > 0 else False
+                                latest_volume = volume_series.iloc[-1]
+                                is_vol_spike = latest_volume > (avg_vol_20 * 2) if avg_vol_20 > 0 else False
                                 
                                 # 시그널 UI 출력
                                 st.markdown("#### 📊 기술적 분석 (Technical Indicators)")
@@ -251,7 +263,9 @@ if run_btn:
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric("시가총액", f"{mkt.market_cap / 100000000:,.0f} 억원")
                 col2.metric("자본총계", f"{fin.total_equity / 100000000:,.0f} 억원")
-                col3.metric("영업이익", f"{fin.operating_profit / 100000000:,.0f} 억원")
+                
+                period_label = f" ({fin.quarter} 누적)" if fin.quarter != "사업보고서" else " (연간)"
+                col3.metric(f"영업이익{period_label}", f"{fin.operating_profit / 100000000:,.0f} 억원")
                 
                 # 부채비율 계산 및 표시
                 debt_ratio = (fin.total_debt / fin.total_equity * 100) if fin.total_equity > 0 else 0
@@ -260,11 +274,14 @@ if run_btn:
                 # 수익성 지표 추가 (ROE, ROA)
                 st.write("") # 간격 띄우기
                 f_col1, f_col2, f_col3 = st.columns(3)
-                f_col1.metric("당기순이익", f"{fin.net_income / 100000000:,.0f} 억원", delta="적자" if fin.net_income < 0 else None, delta_color="inverse")
+                f_col1.metric(f"당기순이익{period_label}", f"{fin.net_income / 100000000:,.0f} 억원", delta="적자" if fin.net_income < 0 else None, delta_color="inverse")
                 
                 roe_color = "normal" if fin.roe > 0 else "inverse"
-                f_col2.metric("ROE (자기자본이익률)", f"{fin.roe:.1f}%", delta="우수" if fin.roe >= 10 else None, delta_color=roe_color)
-                f_col3.metric("ROA (총자산이익률)", f"{fin.roa:.1f}%")
+                roe_label = "ROE (자기자본이익률, 연환산)" if fin.quarter != "사업보고서" else "ROE (자기자본이익률)"
+                roa_label = "ROA (총자산이익률, 연환산)" if fin.quarter != "사업보고서" else "ROA (총자산이익률)"
+                
+                f_col2.metric(roe_label, f"{fin.roe:.1f}%", delta="우수" if fin.roe >= 10 else None, delta_color=roe_color)
+                f_col3.metric(roa_label, f"{fin.roa:.1f}%")
                 
                 st.divider()
                 
@@ -292,7 +309,10 @@ if run_btn:
                 v_col4.metric("배당수익률", div_display, delta="매력적" if mkt.dividend_yield >= 3.0 else None, delta_color="normal")
                 
                 # 시각적 가이드 박스
-                st.info("💡 **가치투자 체크리스트**: ROE가 10% 이상이면 자본효율이 뛰어나며, 배당수익률이 높을수록 방어적 투자가 가능합니다.")
+                if fin.quarter != "사업보고서":
+                    st.info(f"💡 **분기 실적 분석 안내**: 현재 `{fin.quarter}` 실적을 기준으로 분석 중입니다. 흐름 지표(영업이익, 당기순이익)는 공시된 누적액 기준이며, 가치평가 비율(ROE, ROA, PSR)은 비교를 위해 연환산(Annualized)하여 계산되었습니다.")
+                else:
+                    st.info("💡 **가치투자 체크리스트**: ROE가 10% 이상이면 자본효율이 뛰어나며, 배당수익률이 높을수록 방어적 투자가 가능합니다.")
                 
                 st.divider()
                 

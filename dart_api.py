@@ -17,12 +17,13 @@ def get_corp_code_by_name(corp_name: str) -> Optional[str]:
     """
     pass
 
-def fetch_financial_statement(corp_code: str, year: int, fs_div: str = "CFS") -> Optional[List[Dict[str, Any]]]:
+def fetch_financial_statement(corp_code: str, year: int, reprt_code: str = "11011", fs_div: str = "CFS") -> Optional[List[Dict[str, Any]]]:
     """
-    OpenDART API를 통해 특정 기업의 단일연도 전체 재무제표를 가져옵니다.
+    OpenDART API를 통해 특정 기업의 단일연도 혹은 분기/반기 전체 재무제표를 가져옵니다.
     
     :param corp_code: 기업 고유번호 (8자리 숫자, 예: 삼성전자 '00126380')
     :param year: 사업연도 (예: 2023)
+    :param reprt_code: 보고서 코드 ('11011'=사업, '11013'=1분기, '11012'=반기, '11014'=3분기)
     :param fs_div: 'CFS'(연결재무제표) 또는 'OFS'(별도재무제표)
     """
     url = "https://opendart.fss.or.kr/api/fnlttSinglAcntAll.json"
@@ -32,7 +33,7 @@ def fetch_financial_statement(corp_code: str, year: int, fs_div: str = "CFS") ->
         "crtfc_key": DART_API_KEY,  # API 키
         "corp_code": corp_code,     # 기업 고유번호
         "bsns_year": str(year),     # 사업연도
-        "reprt_code": "11011",      # 보고서 코드 (11011 = 사업보고서)
+        "reprt_code": reprt_code,   # 보고서 코드
         "fs_div": fs_div            # 재무제표 종류
     }
     

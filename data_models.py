@@ -6,7 +6,7 @@ from typing import List, Optional
 
 @dataclass
 class FinancialStatement:
-    """연도별 재무제표 핵심 항목 (위험 관리용 데이터 모델)"""
+    """연도별/분기별 재무제표 핵심 항목 (위험 관리용 데이터 모델)"""
     year: int                   # 연도 (예: 2023)
     total_assets: float         # 자산총계 (회사가 가진 모든 자산)
     total_equity: float         # 자본총계 (순수한 회사의 돈)
@@ -16,18 +16,38 @@ class FinancialStatement:
     operating_profit: float     # 영업이익 (회사가 주된 영업활동으로 번 돈)
     net_income: float           # 당기순이익 (세금 등을 모두 빼고 최종적으로 남은 돈)
     sales: float                # 매출액 (상품을 팔고 받은 총액)
+    quarter: str = "사업보고서"   # 분기 ("1분기", "반기", "3분기", "사업보고서")
 
     @property
     def roe(self) -> float:
-        """자기자본이익률 (ROE, %)"""
+        """자기자본이익률 (ROE, %) - 연환산 기준"""
         if self.total_equity <= 0: return 0.0
-        return (self.net_income / self.total_equity) * 100
+        
+        # 분기별 누적 당기순이익을 연간 기준으로 환산하기 위한 가중치
+        weight = 1.0
+        if self.quarter == "1분기":
+            weight = 4.0
+        elif self.quarter == "반기":
+            weight = 2.0
+        elif self.quarter == "3분기":
+            weight = 4.0 / 3.0
+            
+        return ((self.net_income * weight) / self.total_equity) * 100
 
     @property
     def roa(self) -> float:
-        """총자산이익률 (ROA, %)"""
+        """총자산이익률 (ROA, %) - 연환산 기준"""
         if self.total_assets <= 0: return 0.0
-        return (self.net_income / self.total_assets) * 100
+        
+        weight = 1.0
+        if self.quarter == "1분기":
+            weight = 4.0
+        elif self.quarter == "반기":
+            weight = 2.0
+        elif self.quarter == "3분기":
+            weight = 4.0 / 3.0
+            
+        return ((self.net_income * weight) / self.total_assets) * 100
 
 @dataclass
 class MarketData:

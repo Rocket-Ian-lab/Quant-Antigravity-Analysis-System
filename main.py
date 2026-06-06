@@ -7,15 +7,24 @@ from news_api import fetch_news
 from ai_summary import summarize_news
 from chart import plot_bollinger_bands
 
-def analyze_company(ticker: str, corp_code: str, company_name: str, target_year: int = 2023):
-    print(f"\n[{company_name}] 기업 분석을 시작합니다...")
+def analyze_company(ticker: str, corp_code: str, company_name: str, target_year: int = 2023, quarter: str = "사업보고서"):
+    print(f"\n[{company_name}] 기업 분석을 시작합니다... (분기/연간: {quarter})")
+    
+    # 분기명에 맞는 OpenDART 보고서 코드 매핑
+    quarter_to_code = {
+        "1분기": "11013",
+        "반기": "11012",
+        "3분기": "11014",
+        "사업보고서": "11011"
+    }
+    reprt_code = quarter_to_code.get(quarter, "11011")
     
     # 1. OpenDART에서 재무제표 가져오기
-    print("1. OpenDART API에서 재무제표 데이터를 가져오는 중...")
-    accounts_data = fetch_financial_statement(corp_code, target_year, fs_div="CFS")
+    print(f"1. OpenDART API에서 재무제표 데이터를 가져오는 중... (코드: {reprt_code})")
+    accounts_data = fetch_financial_statement(corp_code, target_year, reprt_code=reprt_code, fs_div="CFS")
     
     if not accounts_data:
-        accounts_data = fetch_financial_statement(corp_code, target_year, fs_div="OFS")
+        accounts_data = fetch_financial_statement(corp_code, target_year, reprt_code=reprt_code, fs_div="OFS")
         
     if not accounts_data:
         print(f"[실패] {company_name}의 재무 데이터를 가져오지 못했습니다.")
@@ -28,7 +37,12 @@ def analyze_company(ticker: str, corp_code: str, company_name: str, target_year:
     kw_cur_assets = ['유동자산']
     kw_cur_liab = ['유동부채']
     kw_op_profit = ['영업이익', '영업이익(손실)', '영업손익']
-    kw_net_income = ['당기순이익', '당기순이익(손실)']
+    kw_net_income = [
+        '당기순이익', '당기순이익(손실)', 
+        '분기순이익', '분기순이익(손실)', 
+        '반기순이익', '반기순이익(손실)', 
+        '연결당기순이익', '연결분기순이익', '연결반기순이익'
+    ]
     kw_sales = ['매출액', '수익(매출액)', '영업수익', '매출']
 
     fin_state = FinancialStatement(
@@ -40,7 +54,8 @@ def analyze_company(ticker: str, corp_code: str, company_name: str, target_year:
         current_liabilities=extract_account_value(accounts_data, kw_cur_liab),
         operating_profit=extract_account_value(accounts_data, kw_op_profit),
         net_income=extract_account_value(accounts_data, kw_net_income),
-        sales=extract_account_value(accounts_data, kw_sales)
+        sales=extract_account_value(accounts_data, kw_sales),
+        quarter=quarter
     )
 
     # 3. pykrx 라이브러리로 주식 시장 데이터 가져오기
@@ -48,8 +63,17 @@ def analyze_company(ticker: str, corp_code: str, company_name: str, target_year:
     market_df = fetch_market_multiples() 
     market_data = get_stock_market_data(ticker, market_df)
 
-    if fin_state.sales > 0 and market_data.market_cap > 0:
-        market_data.psr = market_data.market_cap / fin_state.sales
+    # PSR 계산을 위해 매출액 연환산 (Flow 지표)
+    annualized_sales = fin_state.sales
+    if quarter == "1분기":
+        annualized_sales *= 4.0
+    elif quarter == "반기":
+        annualized_sales *= 2.0
+    elif quarter == "3분기":
+        annualized_sales *= 4.0 / 3.0
+
+    if annualized_sales > 0 and market_data.market_cap > 0:
+        market_data.psr = market_data.market_cap / annualized_sales
 
     # 4. 네이버 주식 테마(섹터) 데이터 크롤링
     print("3. 네이버 금융에서 세부 테마/섹터 정보를 가져오는 중...")

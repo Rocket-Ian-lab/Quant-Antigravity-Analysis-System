@@ -9,9 +9,15 @@ from data_models import MarketData
 def get_latest_business_day() -> str:
     """
     가장 최근의 영업일(주식 시장이 열린 날)을 구합니다.
-    주말이나 공휴일엔 주가가 안 변하므로, 안전하게 전날/전전날을 확인합니다.
+    주말이면 직전 금요일로 보정합니다. (공휴일은 pykrx가 빈 데이터를 반환하므로
+    호출부에서 폴백 처리됩니다.)
+    장 마감 전 당일 데이터는 아직 없을 수 있어, 전 영업일을 기준으로 합니다.
     """
-    return "20260430" # 임시로 확실한 평일을 사용 (휴일 에러 방지)
+    day = datetime.now() - timedelta(days=1)
+    # 토요일(5)/일요일(6)이면 금요일로 이동
+    while day.weekday() >= 5:
+        day -= timedelta(days=1)
+    return day.strftime("%Y%m%d")
 
 def fetch_market_multiples(target_date: str = None) -> pd.DataFrame:
     """
@@ -40,17 +46,10 @@ def fetch_market_multiples(target_date: str = None) -> pd.DataFrame:
         })
         return merged_df
     except Exception as e:
-        print(f"[경고] pykrx에서 데이터를 가져오지 못했습니다. 임시 데이터를 반환합니다. ({e})")
-        # 실패 시 삼성전자('005930') 임시 더미 데이터 반환
-        dummy_data = {
-            "price": [80000],
-            "market_cap": [477582000000000],
-            "per": [15.2],
-            "pbr": [1.4],
-            "eps": [5263],
-            "bps": [57142]
-        }
-        return pd.DataFrame(dummy_data, index=["005930"])
+        print(f"[경고] pykrx에서 데이터를 가져오지 못했습니다. 빈 데이터를 반환하여 네이버 실시간 스크래핑으로 폴백합니다. ({e})")
+        # 실패 시 가짜 더미값 대신 빈 DataFrame을 반환합니다.
+        # 이렇게 하면 get_stock_market_data()가 모든 종목을 네이버 실시간 시세로 폴백합니다.
+        return pd.DataFrame(columns=["price", "market_cap", "per", "pbr", "eps", "bps"])
 
 def scrape_naver_market_data(ticker: str) -> dict:
     url = f"https://finance.naver.com/item/main.naver?code={ticker}"

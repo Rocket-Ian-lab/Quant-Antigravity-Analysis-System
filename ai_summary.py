@@ -1,4 +1,4 @@
-import google.generativeai as genai
+from google import genai
 from typing import List, Dict
 
 import os
@@ -29,21 +29,22 @@ def summarize_news(news_list: List[Dict[str, str]], company_name: str) -> str:
         return summary
 
     try:
-        # Gemini API 설정
-        genai.configure(api_key=GEMINI_API_KEY)
-        # 최신 텍스트 모델인 gemini-pro (또는 gemini-1.5-pro)를 사용합니다.
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
+        # Gemini API 클라이언트 생성 (google-genai SDK)
+        client = genai.Client(api_key=GEMINI_API_KEY)
+
         # AI에게 지시할 프롬프트(명령어)를 작성합니다.
         prompt = f"다음은 '{company_name}'에 대한 최신 뉴스 헤드라인들입니다:\n\n"
         for i, news in enumerate(news_list):
             prompt += f"- {news['title']}\n"
-            
+
         prompt += f"\n이 뉴스들을 종합하여, 현재 이 기업을 둘러싼 가장 중요한 핵심 상황을 딱 3줄로 요약해주세요. (마크다운의 불릿 포인트 '-' 를 사용하세요)"
-        
-        # AI 모델에 텍스트 생성을 요청합니다.
-        response = model.generate_content(prompt)
-        
+
+        # 최신 텍스트 모델인 gemini-2.0-flash를 사용합니다.
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=prompt
+        )
+
         return response.text
         
     except Exception as e:
